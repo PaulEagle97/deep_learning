@@ -1,3 +1,6 @@
+"""
+Features a flexible class implementation of NNs from first principles.
+"""
 import time
 import copy
 import itertools
@@ -73,6 +76,34 @@ class NN:
             grad_mxs = [w_grad, b_grad]
             self._grad[layer] = grad_mxs
 
+    # helper methods for __init__
+    def mx_size_map(self, params):
+        """
+        Creates mapping between each layer and sizes 
+        of corresponding matrixes for weights and biases.
+        Returns:
+                {1:(w1_size, b1_size), 
+                 2:(w2_size, b2_size),
+                 n:(wn_size, bn_size)}
+        """
+        nn_layout = dict()
+        for layer in range(1, len(params)):
+            nn_layout[layer] = ((params[layer-1], params[layer]), (1, params[layer]))
+
+        return nn_layout
+    def act_func_map(self, act_map):
+        """
+        Converts provided map for activation functions in each layer to a dictionary 
+        with direct references to the functions and their derivatives for each layer.
+        """
+        # validate the input
+        assert len(act_map) == self._nn_depth, "Invalid activation map (length)"
+        assert all(key in range(1, self._nn_depth + 1) for key in act_map.keys()), "Invalid layer number(s)"
+        assert all(isinstance(func_name, str) for func_name in act_map.values()), "Invalid function name(s)"
+
+        # return a new dict with funcs and their derivatives mapped to each layer
+        return {layer: (getattr(self, "_" + func_name), getattr(self, "_" + func_name + "_der")) for layer, func_name in act_map.items()}
+
     def __str__(self, with_full_report=False):
         """
         Returns a string - the current state of the model
@@ -110,77 +141,6 @@ class NN:
 
         return state_str
 
-    def mx_size_map(self, params):
-        """
-        Creates mapping between each layer and sizes 
-        of corresponding matrixes for weights and biases.
-        Returns:
-                {1:(w1_size, b1_size), 
-                 2:(w2_size, b2_size),
-                 n:(wn_size, bn_size)}
-        """
-        nn_layout = dict()
-        for layer in range(1, len(params)):
-            nn_layout[layer] = ((params[layer-1], params[layer]), (1, params[layer]))
-
-        return nn_layout
-    def act_func_map(self, act_map):
-        """
-        Converts provided map for activation functions in each layer to a dictionary 
-        with direct references to the functions and their derivatives for each layer.
-        """
-        # validate the input
-        assert len(act_map) == self._nn_depth, "Invalid activation map (length)"
-        assert all(key in range(1, self._nn_depth + 1) for key in act_map.keys()), "Invalid layer number(s)"
-        assert all(isinstance(func_name, str) for func_name in act_map.values()), "Invalid function name(s)"
-
-        # return a new dict with funcs and their derivatives mapped to each layer
-        return {layer: (getattr(self, "_" + func_name), getattr(self, "_" + func_name + "_der")) for layer, func_name in act_map.items()}
-    
-    def _sigmoid(self, x):
-        """
-        Helper function for computing sigmoid(x)
-        """
-        return 1 / (1 + np.exp(-x))
-    def _relu(self, x):
-        """
-        Helper function for computing ReLU(x)
-        """
-        return np.maximum(0, x)
-    def _sigmoid_der(self, x):
-        """
-        Computes the derivative values for f(x)=1/(1+e**(-x)).
-        """
-        
-        return x * (1 - x)
-    def _relu_der(self, x):
-        """
-        Computes the derivative values for f(x)=max(0, x).
-        """
-        return x > 0
-    # methods for computing cost derivatives
-    def _abs_der(self, x):
-        """
-        Computes the derivative values for f(x) = |x|.
-        """
-        # creates an array of ones with the same shape as input arr
-        der_arr = np.ones_like(x)
-        
-        # replaces elements less than or equal to zero with -1
-        der_arr[x <= 0] = -1
-        
-        return der_arr
-    def _sqr_der(self, x):
-        """
-        Computes the derivative values for f(x)=x**2.
-        """
-        return 2 * x
-    def _half_sqr_der(self, x):
-        """
-        Computes the derivative values for f(x)=(x**2)/2.
-        """
-        return x
-
     def cost(self):
         """
         Computes the current cost value of the NN.
@@ -216,6 +176,53 @@ class NN:
         result /= len(self._train)
 
         return result
+
+    # methods for computing activations
+    def _sigmoid(self, x):
+        """
+        Helper function for computing sigmoid(x)
+        """
+        return 1 / (1 + np.exp(-x))
+    def _relu(self, x):
+        """
+        Helper function for computing ReLU(x)
+        """
+        return np.maximum(0, x)
+    # methods for computing activation derivatives
+    def _sigmoid_der(self, x):
+        """
+        Computes the derivative values for f(x)=1/(1+e**(-x)).
+        """
+        
+        return x * (1 - x)
+    def _relu_der(self, x):
+        """
+        Computes the derivative values for f(x)=max(0, x).
+        """
+        return x > 0
+    # methods for computing loss derivatives
+    def _abs_der(self, x):
+        """
+        Computes the derivative values for f(x) = |x|.
+        """
+        # creates an array of ones with the same shape as input arr
+        der_arr = np.ones_like(x)
+        
+        # replaces elements less than or equal to zero with -1
+        der_arr[x <= 0] = -1
+        
+        return der_arr
+    def _sqr_der(self, x):
+        """
+        Computes the derivative values for f(x)=x**2.
+        """
+        return 2 * x
+    def _half_sqr_der(self, x):
+        """
+        Computes the derivative values for f(x)=(x**2)/2.
+        """
+        return x
+
     #@profile
     def forward(self, input_arr):
         """
