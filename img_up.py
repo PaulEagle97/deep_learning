@@ -1,3 +1,12 @@
+"""
+This script permits to process one of 28x28 greyscale images from MNIST dataset and perform the following actions:
+1. Save an image as a training data for a NN object
+2. Train the NN with a chosen set of parameters
+3. Plot the cost of the model
+4. Save the trained model to an external file
+5. Import a previously trained NN from a file
+6. Upscale the image "saved" in NN to any resolution and display the result.
+"""
 from nn_fwk import NN
 import gzip
 import os
@@ -89,84 +98,82 @@ def norm_coord(gen_size):
     return coord_matrix
 
 def main():
-    # LOAD IMAGE
+    # constants
+    IMAGE_SIZE = 28
+    NUM_IMAGES = 50
+    IMG_IDX = 30
+
+    # file path to the MNIST dataset
     curr_dir = os.getcwd()
     file_name = 'MNIST-train-images-idx3-ubyte.gz'
-    data_path = os.path.join (curr_dir, "train_data", file_name)
+    data_path = os.path.join(curr_dir, "train_data", file_name)
 
-    image_size = 28
-    num_images = 50
-
-    with gzip.open (data_path,'r') as imgs:
-        # magic_number = int.from_bytes(imgs.read(4), 'big')
-        # tot_num_images = int.from_bytes(imgs.read(4), 'big')
-        
-        # print("Total number of images:", tot_num_images)
+    # LOAD IMAGE
+    with gzip.open(data_path, 'r') as imgs:
+        # skip the header
         imgs.read(16)
-        
-        buf = imgs.read(image_size * image_size * num_images)
+        # read image data
+        buf = imgs.read(IMAGE_SIZE * IMAGE_SIZE * NUM_IMAGES)
         data = np.frombuffer(buf, dtype=np.uint8)
-        data = data.reshape(num_images, image_size, image_size, 1)
-
-    image = np.asarray(data[4]).squeeze()
-    gen_size = (120, 120)
-
-    # plt.imshow(image, cmap='gray', vmin=0, vmax=255)
-    # plt.colorbar()
-    # plt.show()
-    # return
+        data = data.reshape(NUM_IMAGES, IMAGE_SIZE, IMAGE_SIZE, 1)
+        # extract and squeeze the selected image
+        image = np.asarray(data[IMG_IDX]).squeeze()
 
     # ENCODE IMAGE
     img_mx = img_encode(image)
-    # norm_inp = np.split(img_mx, [2], 1)[0]
-    norm_inp = norm_coord(gen_size)
 
     # CREATE NN
     rand_range = (-1, 1)
-    act_funcs = {1:"relu", 2:"sigmoid", 3:"sigmoid"}
+    act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
     nn_layout = ((2, 7, 4, 1), act_funcs)
     img_nn = NN(nn_layout, rand_range, img_mx, "Image Upscaler")
 
-    # LEARN & PLOT
-    plot_vals = np.array([[], []])
-    tot_it = 0
-
-    num_it = 100
-    nn_state, y_vals = img_nn.learn_static(num_it, batch_ratio=1/(28**2), rate=1/7, stop=False, with_plot=False)
-    new_vals = np.array((np.arange(num_it)+(tot_it+1), np.array(y_vals)))
-
-    plot_vals = np.hstack((plot_vals, new_vals))
-    tot_it += num_it
-
-    # <<< PLOT COST >>>
-    img_nn.static_plot(plot_vals[0], plot_vals[1])
-
-    # SAVE PARAMS
-    file_name = 'NN_params_new.npy'
+    # LOAD NN PARAMS (OPTIONAL)
+    file_name = 'UPSC_3.npy'
     data_path = os.path.join (curr_dir, "saved_NNs", file_name)
-    np.save(data_path, nn_state) 
+    read_params = np.load(data_path, allow_pickle='TRUE').item()
+    img_nn.import_nn(read_params)
 
-    # LOAD PARAMS
-    # read_params = np.load(data_path, allow_pickle='TRUE').item()
-    # img_nn.load_params(read_params)
+    # LEARN & PLOT & SAVE (OPTIONAL)
+    # plot_vals = np.array([[], []])
+    # tot_it = 0
+    # num_it = 500
+    # nn_state, y_vals = img_nn.learn_static(num_it, batch_ratio=1/(28**2), rate=1, stop=False, with_plot=False)
+    # new_vals = np.array((np.arange(num_it)+(tot_it+1), np.array(y_vals)))
+    # plot_vals = np.hstack((plot_vals, new_vals))
+    # tot_it += num_it
+    # img_nn.static_plot(plot_vals[0], plot_vals[1])
+    # file_name = 'UPSC_new.npy'
+    # data_path = os.path.join (curr_dir, "saved_NNs", file_name)
+    # np.save(data_path, nn_state) 
 
     # FEED INPUT
+    RESOLUTION = (128, 128)
+    # get norm coordinates for the given resolution
+    norm_inp = norm_coord(RESOLUTION)
+    # create temp array to hold the image matrix
     gen_img = np.array([])
+    # iterate through each pair of coordinates
     for inp_data in norm_inp:
+        # compute the brightness of the pixel
         output = img_nn.forward([inp_data])
+        # combine coordinates and the brightness
         new_row = np.concatenate([inp_data, output[0]])
-
+        # add new entry to the image matrix
         if len(gen_img) > 0:
             gen_img = np.vstack([gen_img, new_row])
         else:
             gen_img = np.concatenate([gen_img, new_row])
 
     # DECODE IMAGE
-    new_img = img_decode(gen_img, gen_size)
+    new_img = img_decode(gen_img, RESOLUTION)
 
-    # SHOW RESULT
-    plt.imshow(new_img, cmap='gray', vmin=0, vmax=255)
-    plt.colorbar()
+    # SHOW ORIGINAL AND GENERATED IMAGE
+    plt.figure(figsize=(10, 5))     # adjusts the image size
+    imgs = [image, new_img]
+    for i in range(2):
+        plt.subplot(1, 2, i + 1)
+        plt.imshow(imgs[i], cmap='gray')
     plt.show()
 
 

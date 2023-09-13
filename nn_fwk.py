@@ -1,5 +1,5 @@
 """
-Features a flexible class implementation of NNs from first principles.
+Features a flexible class implementation of NNs from the first principles.
 """
 import time
 import copy
@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
 from multiprocessing import Process, Queue
+np.seterr(under='warn')
 
 # command for profiling (to run in Command Prompt):
 # kernprof -l -v nn_fwk.py
@@ -42,7 +43,9 @@ class NN:
         self._param_config = self.mx_size_map(nn_layout[0])
         self._nn_depth = len(self._param_config)
         # to store activation funcs for each layer
-        self._layer_config = self.act_func_map(nn_layout[1])
+        self._act_funcs = nn_layout[1]
+        # to map act. funcs and derivatives to each layer
+        self._layer_config = self.act_func_map(self._act_funcs)
         # to store training dataset
         self._train = train_data.copy()
         self._inp_size = nn_layout[0][0]
@@ -63,18 +66,14 @@ class NN:
             # gets the sizes of parameter matrixes for each layer
             w_shape = self._param_config[layer][0]
             b_shape = self._param_config[layer][1]
-            # creates one random matrix for weights and 
-            # another one for biases per each layer of NN
+            # creates two random matrixes for weights and biases per each layer
             w = np.random.uniform(rand_range[0], rand_range[1], size=w_shape)
             b = np.random.uniform(rand_range[0], rand_range[1], size=b_shape)
-            param_mxs = [w, b]
-            self._params[layer] = param_mxs
-            # initializes gradient table with empty matrixes 
-            # of the same shape as the parameter matrixes
+            self._params[layer] = [w, b]
+            # initializes gradient table with empty matrixes of the same shape
             w_grad = np.zeros(shape=w_shape)
             b_grad = np.zeros(shape=b_shape)
-            grad_mxs = [w_grad, b_grad]
-            self._grad[layer] = grad_mxs
+            self._grad[layer] = [w_grad, b_grad]
 
     # helper methods for __init__
     def mx_size_map(self, params):
@@ -188,18 +187,31 @@ class NN:
         Helper function for computing ReLU(x)
         """
         return np.maximum(0, x)
+    def _softmax(self, x):
+        """
+        Helper function for a stable computation of softmax(x)
+        """
+        norm_x = x - np.max(x)
+        exp_z = np.exp(norm_x)
+        result = exp_z / np.sum(exp_z)
+
+        return result
     # methods for computing activation derivatives
     def _sigmoid_der(self, x):
         """
         Computes the derivative values for f(x)=1/(1+e**(-x)).
         """
-        
         return x * (1 - x)
     def _relu_der(self, x):
         """
         Computes the derivative values for f(x)=max(0, x).
         """
         return x > 0
+    def _softmax_der(self, x):
+        """
+        Computes the derivative values for f(x)=softmax([x]).
+        """
+        return self._sigmoid_der(x)
     # methods for computing loss derivatives
     def _abs_der(self, x):
         """
@@ -419,12 +431,14 @@ class NN:
         # prints how much time was needed to pass the cost threshold
         if thresh_flag:
             print(f"{100 * threshold}% of cost was reached in {round(thresh_t - start_t, 3)}s ({thresh_iter} iterations).")
-
         if with_plot:
             # plots the cost
             self.static_plot(x_vals, y_vals)
 
-        return self._params, y_vals
+        # gets the trained state of NN
+        nn_state = self.export_nn()
+
+        return nn_state, y_vals
 
     def static_plot(self, x_vals, y_vals):
         """
@@ -497,7 +511,10 @@ class NN:
         if thresh_flag:
             print(f"{100 * threshold}% of cost was reached in {round(thresh_t - start_t, 3)}s ({thresh_iter} iterations).")
 
-        return self._params
+        # gets the trained state of NN
+        nn_state = self.export_nn()
+
+        return nn_state
 
     def dynamic_plot(self, *args):
         # gets the queue
@@ -551,20 +568,43 @@ class NN:
         
         plt.show()
 
-    def load_params(self, new_params):
+    def export_nn(self):
         """
-        Loads a provided dictionary with values 
-        for each weight & bias into the NN.
+        Creates an object with current parameters of NN, that
+        can be saved and passed to the function <self.import_nn()> 
+        to restore the state of NN later.
+        Output: {layer:([w, b], 'act_func')}
         """
-        try:
-            for layer in self._params:
-                for mx_idx in range(2):
-                    assert new_params[layer][mx_idx].shape == self._params[layer][mx_idx].shape
-        except Exception as e:
-            print("An error occurred while importing parameters:", e)
-            return
+        nn_state = dict()
+        for layer, params in self._params.items():
+            act_func = self._act_funcs[layer]
+            nn_state[layer] = (params, act_func)
 
+        return nn_state
+
+    def import_nn(self, new_state):
+        """
+        Imports new parameters of NN, and updates the corresponding class instance attributes.
+        Works together with the function <self.export_nn()> to facilitate the process of storing NNs.
+        """
+        # creates temp dicts to store new configuration
+        act_funcs = dict()
+        new_params = dict()
+        for layer, config in new_state.items():
+            # checks if there is act func
+            if isinstance(config[1], str):
+                new_params[layer] = config[0]
+                # retrieves act func name
+                act_funcs [layer] = config[1]
+            else:
+                new_params[layer] = config
+                # assigns the default act func
+                act_funcs [layer] = 'sigmoid'
+        # updated weights and biases
         self._params = copy.deepcopy(new_params)
+        self._nn_depth = len(self._params)
+        # maps layers to act funcs
+        self._layer_config = self.act_func_map(act_funcs)
 
     # LEGACY METHODS (can be used but are outperformed by the current algorithms)
     def finite_diff(self, *_):
@@ -740,7 +780,6 @@ class NN:
             da_next = np.array(da_layer)
             da_next = np.sum(da_next, axis=0)
 
-
 def adder_truth_table(num_bits):
     """
     Generates a truth table for a <num_bits> adder.
@@ -840,14 +879,13 @@ def main():
     full_add_nn = NN(full_add_layout, rand_range, np.array(full_add_train), "Full-adder")
     # full_add_nn.learn_dynamic(200)
 
-    n_bit = 4
+    n_bit = 3
     adder_train = adder_truth_table(n_bit)
     act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
     adder_layout = ((2*n_bit, 3*n_bit, 2*n_bit, n_bit + 1), act_funcs)
 
     adder_nn = NN(adder_layout, rand_range, adder_train, f"{n_bit}-bit Adder")
-    adder_nn.learn_static(500, batch_ratio=1/len(adder_train), rate=1/10)
-
+    adder_nn.learn_dynamic(1000, batch_ratio=1/len(adder_train), rate=1, stop=False)
 
 if __name__ == "__main__":
     main()
