@@ -379,7 +379,7 @@ class NN:
                 # resets the gradient to zero for next training cycle
                 grad_mx[:] = 0
 
-    def learn_static (self, n, alg_name='stochastic_descent', rate=1, batch_ratio=1/10, threshold=0.02, with_plot=True,  stop=True, with_full_report=False):
+    def learn_static (self, n, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, with_plot=True,  stop=True, with_full_report=False):
         """
         Trains the NN <n> times with the chosen algorithm, reports the state of the model,
         plots the graph of the cost function and computes the total run time.
@@ -401,10 +401,8 @@ class NN:
         print("\n<<< LEARNING >>>\n")
         # repeats the learning procedure <n> times
         for iter in range(n):
-            # selects an algorithm
-            algorithm = getattr(self, alg_name)
-            # executes the algorithm
-            algorithm(batch_ratio)
+            # executes the selected algorithm
+            algorithm(self, batch_ratio)
 
             # gets the current cost of the model
             cost = self._curr_cost
@@ -450,7 +448,7 @@ class NN:
         plt.grid(True)
         plt.show()
 
-    def learn_dynamic(self, n, alg_name='stochastic_descent', rate=1, batch_ratio=1/10, threshold=0.02, upd_interval=20, stop=True, with_full_report=False):
+    def learn_dynamic(self, n, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, upd_interval=20, stop=True, with_full_report=False):
         """
         Trains the NN <n> times with the chosen algorithm, reports the state of the model
         plots the graph of the cost function in real time and computes the total run time.
@@ -475,10 +473,8 @@ class NN:
         print("\n<<< LEARNING >>>\n")
         # repeats the learning procedure <n> times
         for iter in range(n):
-            # selects an algorithm
-            algorithm = getattr(self, alg_name)
-            # executes the algorithm
-            algorithm(batch_ratio)
+            # executes the selected algorithm
+            algorithm(self, batch_ratio)
             
             # gets the current cost of the model
             cost = self._curr_cost
@@ -879,13 +875,13 @@ def main():
     full_add_nn = NN(full_add_layout, rand_range, np.array(full_add_train), "Full-adder")
     # full_add_nn.learn_dynamic(200)
 
-    n_bit = 3
+    n_bit = 5
     adder_train = adder_truth_table(n_bit)
     act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
     adder_layout = ((2*n_bit, 3*n_bit, 2*n_bit, n_bit + 1), act_funcs)
 
     adder_nn = NN(adder_layout, rand_range, adder_train, f"{n_bit}-bit Adder")
-    adder_nn.learn_dynamic(1000, batch_ratio=1/len(adder_train), rate=1, stop=False)
+    adder_nn.learn_static(1000, batch_ratio=1/len(adder_train), rate=1/2, stop=True)
 
 if __name__ == "__main__":
     main()
