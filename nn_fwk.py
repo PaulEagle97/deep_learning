@@ -219,10 +219,8 @@ class NN:
         """
         # creates an array of ones with the same shape as input arr
         der_arr = np.ones_like(x)
-        
         # replaces elements less than or equal to zero with -1
         der_arr[x <= 0] = -1
-        
         return der_arr
     def _sqr_der(self, x):
         """
@@ -234,6 +232,11 @@ class NN:
         Computes the derivative values for f(x)=(x**2)/2.
         """
         return x
+    def _lncosh_der(self, x):
+        """
+        Computes the derivative values for f(x)=ln(cosh(x)).
+        """
+        return np.tanh(x)
 
     #@profile
     def forward(self, input_arr):
@@ -344,7 +347,8 @@ class NN:
             der_func = self._layer_config[layer][1]
 
             # computes the derivative expression vectorized for all activations
-            der_expr = self._half_sqr_der(da_next) * der_func(self._acts[layer][0])
+            # der_expr = self._half_sqr_der(da_next) * der_func(self._acts[layer][0])
+            der_expr = self._lncosh_der(da_next) * der_func(self._acts[layer][0])
             #---------------------------------------------------------------------------
 
             # computes bias derivatives for the entire layer
@@ -379,64 +383,106 @@ class NN:
                 # resets the gradient to zero for next training cycle
                 grad_mx[:] = 0
 
-    def learn_static (self, n, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, with_plot=True,  stop=True, with_full_report=False):
+    def learn(self, num_epochs, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, stop=True, plot_static=False, plot_dynamic=False, upd_interval=20, with_full_report=False, return_cost = False):
         """
-        Trains the NN <n> times with the chosen algorithm, reports the state of the model,
-        plots the graph of the cost function and computes the total run time.
+        Trains the NN <n> times with the chosen algorithm, reports the state of the model
+        plots the graph of the cost function (opt. in real time) and computes the total run time.
         """
+        assert not (plot_dynamic and plot_static), "Incorrect plotting mode setup"
+        # initializes threshold flag
+        thresh_flag = False
         # sets the learning rate
         self._rate = rate
-
-        # initializes lists for plotting
-        x_vals = []
-        y_vals = []
 
         # reports the initial state of the NN
         print("\n<<< INITIAL STATE >>>\n")
         print(self.__str__(with_full_report))
 
-        # starts the timer
+        if return_cost:
+            # initializes table for cost/epoch
+            cost_vals = []
+        if plot_static:  
+            # initializes lists for plotting
+            x_vals = []
+            y_vals = []
+        if plot_dynamic:
+            # creates a queue for communication with the plotting process
+            queue = Queue()
+            # creates the plotting process
+            plotting_process = Process(target=self.dynamic_plot, args=(queue,))
+            plotting_process.start()
+
+        # initializes the progress bar
+        EMPTY, COMPLETE = ' - ', ' # '
+        BAR_LENGTH = 10
+        CURSOR_UP = '\033[1A'
+        CLEAR = '\x1b[2K'
+        CLEAR_LINE = CURSOR_UP + CLEAR
+        counter = 1
+        ratio = num_epochs / BAR_LENGTH
+        progress = f"[{EMPTY * BAR_LENGTH}]"
+        print(f"\n<<< LEARNING PROGRESS >>>\n{progress}")
+
         start_t = time.time()
-        thresh_flag = False
-        print("\n<<< LEARNING >>>\n")
-        # repeats the learning procedure <n> times
-        for iter in range(n):
+        # repeats the learning procedure <num_epochs> times
+        for epoch in range(num_epochs):
             # executes the selected algorithm
             algorithm(self, batch_ratio)
+            # update the progress bar if needed
+            if (epoch+1) >= ratio*counter:
+                print(CLEAR_LINE, end='')
+                print(f"[{COMPLETE * counter}{EMPTY * (BAR_LENGTH-counter)}]")
+                counter += 1
 
             # gets the current cost of the model
             cost = self._curr_cost
-
-            # saves the values for the plot
-            x_vals.append(iter + 1)
-            y_vals.append(cost)
+            if return_cost:
+                # saves the values for the cost table
+                cost_vals.append(cost)
+            if plot_static:
+                # saves the values for the plot
+                x_vals.append(epoch + 1)
+                y_vals.append(cost)
+            if plot_dynamic:
+                # updates the cost plot every <upd_interval> cycles
+                if (epoch + 1) % upd_interval == 0:
+                    # sends data to the plotting process
+                    queue.put((epoch + 1, cost))
 
             # detects the time when the threshold cost is reached
             if cost < threshold and not thresh_flag:
                 thresh_t = time.time()
-                thresh_iter = iter
+                thresh_iter = epoch
                 thresh_flag = True
                 # stops learning
                 if stop == True:
+                    print(CLEAR_LINE, end='')
+                    print(f"[{COMPLETE * BAR_LENGTH}]")
                     break
         
-        # stops the timer
         end_t = time.time()
-        # prints the trained state of the model
+
+        if plot_dynamic:
+            # signals the plot process to terminate
+            queue.put(None)
+
+        # reports the final state of the model
         print(self.__str__(with_full_report))
-        # prints the total time
         print(f"\nTime elapsed: {round(end_t - start_t, 3)}s.")
         # prints how much time was needed to pass the cost threshold
         if thresh_flag:
             print(f"{100 * threshold}% of cost was reached in {round(thresh_t - start_t, 3)}s ({thresh_iter} iterations).")
-        if with_plot:
+
+        if plot_static:
             # plots the cost
             self.static_plot(x_vals, y_vals)
 
-        # gets the trained state of NN
+        # gets the state of NN
         nn_state = self.export_nn()
 
-        return nn_state, y_vals
+        if return_cost:
+            return nn_state, cost_vals
+        return nn_state
 
     def static_plot(self, x_vals, y_vals):
         """
@@ -447,71 +493,6 @@ class NN:
         plt.ylabel('Cost of the model')
         plt.grid(True)
         plt.show()
-
-    def learn_dynamic(self, n, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, upd_interval=20, stop=True, with_full_report=False):
-        """
-        Trains the NN <n> times with the chosen algorithm, reports the state of the model
-        plots the graph of the cost function in real time and computes the total run time.
-        """
-        # sets the learning rate
-        self._rate = rate
-
-        # reports the initial state of the NN
-        print("\n<<< INITIAL STATE >>>\n")
-        print(self.__str__(with_full_report))
-
-        # creates a queue for communication with the plotting process
-        queue = Queue()
-        
-        # creates the plotting process
-        plotting_process = Process(target=self.dynamic_plot, args=(queue,))
-        plotting_process.start()
-
-        # starts the timer
-        start_t = time.time()
-        thresh_flag = False
-        print("\n<<< LEARNING >>>\n")
-        # repeats the learning procedure <n> times
-        for iter in range(n):
-            # executes the selected algorithm
-            algorithm(self, batch_ratio)
-            
-            # gets the current cost of the model
-            cost = self._curr_cost
-
-            # updates the cost plot every <upd_interval> cycles
-            if (iter + 1) % upd_interval == 0:
-                # sends data to the plotting process
-                queue.put((iter + 1, cost))
-
-            # detects when the threshold cost is reached
-            if cost < threshold and not thresh_flag:
-                thresh_t = time.time()
-                thresh_iter = iter
-                thresh_flag = True
-                # stops learning
-                if stop == True:
-                    break
-        
-        # stops the timer
-        end_t = time.time()
-
-        # signals the plot process to terminate
-        queue.put(None)
-
-        # prints the trained state of the model
-        print(self.__str__(with_full_report))
-        # prints the total time
-        print(f"\nTime elapsed: {round(end_t - start_t, 3)}s.")
-        # prints how much time was needed to pass the cost threshold
-        if thresh_flag:
-            print(f"{100 * threshold}% of cost was reached in {round(thresh_t - start_t, 3)}s ({thresh_iter} iterations).")
-
-        # gets the trained state of NN
-        nn_state = self.export_nn()
-
-        return nn_state
-
     def dynamic_plot(self, *args):
         # gets the queue
         queue = args[0]
@@ -577,7 +558,6 @@ class NN:
             nn_state[layer] = (params, act_func)
 
         return nn_state
-
     def import_nn(self, new_state):
         """
         Imports new parameters of NN, and updates the corresponding class instance attributes.
@@ -826,7 +806,6 @@ def main():
     # layout of a fully connected NN of type: [2xinp ---> 2nx1n ---> out]
     xor_layout = ((2, 2, 1), act_funcs)
     xor_nn = NN(xor_layout, rand_range, np.array(xor_train), "XOR gate")
-    # xor_nn.learn_dynamic(500)
 
     # <<< MUX and DMUX >>>
     dmux_train = ((0, 0, 0, 0),
@@ -846,11 +825,8 @@ def main():
                  )
     mux_layout = ((3, 2, 1), act_funcs)
     
-    dmux_nn = NN(dmux_layout, rand_range, np.array(dmux_train), "Dmux gate")
-    # dmux_nn.learn_dynamic(200)
-    
+    dmux_nn = NN(dmux_layout, rand_range, np.array(dmux_train), "Dmux gate")    
     mux_nn = NN(mux_layout, rand_range, np.array(mux_train), "Mux gate")
-    # mux_nn.learn_dynamic(100)
     
     # <<< ADDERS >>> 
     half_add_train = ((0, 0, 0, 0),
@@ -870,10 +846,7 @@ def main():
     full_add_layout = ((3, 3, 2), act_funcs)
 
     half_add_nn = NN(half_add_layout, rand_range, np.array(half_add_train), "Half-adder")
-    # half_add_nn.learn_dynamic(200)
-
     full_add_nn = NN(full_add_layout, rand_range, np.array(full_add_train), "Full-adder")
-    # full_add_nn.learn_dynamic(200)
 
     n_bit = 5
     adder_train = adder_truth_table(n_bit)
@@ -881,7 +854,8 @@ def main():
     adder_layout = ((2*n_bit, 3*n_bit, 2*n_bit, n_bit + 1), act_funcs)
 
     adder_nn = NN(adder_layout, rand_range, adder_train, f"{n_bit}-bit Adder")
-    adder_nn.learn_static(1000, batch_ratio=1/len(adder_train), rate=1/2, stop=True)
+    adder_nn.learn(500, batch_ratio=1/len(adder_train), rate=1/4, stop=True, plot_static=True)
+
 
 if __name__ == "__main__":
     main()
