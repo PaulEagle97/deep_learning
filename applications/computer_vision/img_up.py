@@ -7,7 +7,7 @@ This script permits to process one of 28x28 greyscale images from MNIST dataset 
 5. Import a previously trained NN from a file
 6. Upscale the image "saved" in NN to any resolution and display the result.
 """
-from nn_fwk import MLP
+from mlp_framework import MLP
 import gzip
 import os
 import numpy as np

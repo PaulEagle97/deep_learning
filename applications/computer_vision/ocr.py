@@ -2,7 +2,7 @@
 This script features simple Optical Character Recognition application, based on the MNIST set
 of handwritten digits.
 """
-from nn_fwk import MLP
+from mlp_framework import MLP
 import numpy as np
 import os
 import matplotlib.pyplot as plt

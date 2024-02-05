@@ -1,5 +1,5 @@
 import inspect
-from nn_fwk import MLP
+from mlp_framework import MLP
 
 def main():
     # Get the docstring for each method in the class and print it
