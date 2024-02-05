@@ -131,21 +131,20 @@ def main():
     # LOAD NN PARAMS (OPTIONAL)
     file_name = 'UPSC_3.npy'
     data_path = os.path.join (curr_dir, "saved_NNs", file_name)
-    read_params = np.load(data_path, allow_pickle='TRUE').item()
-    img_nn.import_nn(read_params)
+    img_nn.import_nn(data_path)
 
     # LEARN & PLOT & SAVE (OPTIONAL)
     # plot_vals = np.array([[], []])
     # tot_it = 0
     # num_it = 500
-    # nn_state, y_vals = img_nn.learn_static(num_it, batch_ratio=1/(28**2), rate=1, stop=False, with_plot=False)
+    # y_vals = img_nn.learn_static(num_it, batch_ratio=1/(28**2), rate=1, stop=False, with_plot=False)
     # new_vals = np.array((np.arange(num_it)+(tot_it+1), np.array(y_vals)))
     # plot_vals = np.hstack((plot_vals, new_vals))
     # tot_it += num_it
     # img_nn.static_plot(plot_vals[0], plot_vals[1])
     # file_name = 'UPSC_new.npy'
     # data_path = os.path.join (curr_dir, "saved_NNs", file_name)
-    # np.save(data_path, nn_state) 
+    # img_nn.export_nn(data_path)
 
     # FEED INPUT
     RESOLUTION = (128, 128)
@@ -156,7 +155,7 @@ def main():
     # iterate through each pair of coordinates
     for inp_data in norm_inp:
         # compute the brightness of the pixel
-        output = img_nn.forward([inp_data])
+        output = img_nn._forward([inp_data])
         # combine coordinates and the brightness
         new_row = np.concatenate([inp_data, output[0]])
         # add new entry to the image matrix

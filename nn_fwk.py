@@ -1,5 +1,6 @@
 """
-Features a flexible class implementation of NNs from the first principles.
+Features a flexible class implementation of neural networks from the first principles, as well as
+several auxiliary methods for testing and debugging.
 """
 import time
 import copy
@@ -10,42 +11,48 @@ import multiprocessing
 from multiprocessing import Process, Queue
 np.seterr(under='warn')
 
-# command for profiling (to run in Command Prompt):
-# kernprof -l -v nn_fwk.py
 class NN:
     """
-    A class implementation of a NN with an arbitrary size and configuration.
+    A class implementation of a fully-connected neural network with a customizable size and configuration.
+    It employs only the core Python and numpy functions. The performance optimization is done via numpy vectorization.
+    Multiple activation and loss functions are supported and can be easily extended.
+    Provides two plotting methods (static / real-time).
+    Allows for storing the image of the network after the training in a file, as well as importing other saved images.
     """
     def __init__(self, nn_layout, rand_range, train_data, name, rate=1):
         """
-        The constructor for NN class.
+        The function is the constructor for a `NN` class, which initializes the parameters and the state 
+        of the newly created neural network object.
+        The `NN` object state is defined by mapping between each layer and the corresponding matrices that 
+        contain values for weights and biases plus the name of the activation function. It is represented as 
+        the dictionary with the following structure:
+        `{layer: ([w, b], 'act_func')}`, where:
+            - `w` is the matrix of weights for the layer;
+            - `b` is the matrix of biases for the layer;
+            - `'act_func'` is the activation function for the layer;
+            - `layer` is the number of the layer.
 
-        Parameters: <nn_layout> - a layout of the NN. Defined as a tuple of type:
-                    ((inp, l1, l2, ... , ln), act_map), where:
-                        - <inp> denotes the size of the input;
-                        - <ln> denotes the number of neurons in the n-th layer.
-                        - <act_map> denotes types of activation funcs for each layer.
-                    <rand_range> - a tuple containing the lower and upper limits
-                    for random initialization of parameter matrixes.
-                    <train_data> - a sequence of training data samples of type:
-                    ((a1, b1, c1, ...), (a2, b2, c2, ...), (an, bn, cn, ...)), where:
-                        - each sample contains <j> input and <k> output values, with <j>
-                          defined by <nn_layout[0][0]>.
-                    <name> - a string-name of the NN.
-
-        The NN state is defined by mapping between each layer and 
-        corresponding matrixes that contain values for weights and biases:
-        {1:[mx_w1, mx_b1],
-         2:[mx_w2, mx_b2],
-         n:[mx_wn, mx_bn]}
+        :param nn_layout: A layout of the neural network. Defined as a tuple of type:
+        `((inp, l1, l2, ... , ln), act_map)`, where:
+            - `inp` denotes the size of the input;
+            - `ln` denotes the number of neurons in the n-th layer.
+            - `act_map` denotes types of activation funcs for each layer.
+        :param rand_range: A tuple containing the lower and upper limits for random initialization of 
+        parameter matrices
+        :param train_data: A sequence of training data samples of type:
+        `((a1, b1, c1, ...), (a2, b2, c2, ...), (an, bn, cn, ...))`, where:
+            - each sample contains `j` input and `k` output values, with `j` defined by `nn_layout[0][0]`
+        :param name: The name of the neural network that identifies it
+        :param rate: Is used to define the speed of learning in the neural network. It determines how quickly 
+        the network adjusts its weights and biases during the training process. Defaults to `1` (optional)
         """
         # to store shape of each parameter mx
-        self._param_config = self.mx_size_map(nn_layout[0])
+        self._param_config = self._mx_size_map(nn_layout[0])
         self._nn_depth = len(self._param_config)
         # to store activation funcs for each layer
         self._act_funcs = nn_layout[1]
         # to map act. funcs and derivatives to each layer
-        self._layer_config = self.act_func_map(self._act_funcs)
+        self._layer_config = self._act_func_map(self._act_funcs)
         # to store training dataset
         self._train = train_data.copy()
         self._inp_size = nn_layout[0][0]
@@ -76,24 +83,36 @@ class NN:
             self._grad[layer] = [w_grad, b_grad]
 
     # helper methods for __init__
-    def mx_size_map(self, params):
-        """
-        Creates mapping between each layer and sizes 
-        of corresponding matrixes for weights and biases.
-        Returns:
-                {1:(w1_size, b1_size), 
-                 2:(w2_size, b2_size),
-                 n:(wn_size, bn_size)}
+    def _mx_size_map(self, params):
+        """ @public
+        The function creates a mapping between each layer in a neural network and the sizes of
+        the corresponding weight and bias matrices.
+        
+        :param params: The `params` parameter is a list that represents the number of neurons in each layer
+        of a neural network. For example, if `params = (10, 20, 30)`, it means that the neural network has 3
+        layers with 10 neurons in the input layer, 20 in the inner layer, and 30 in the output layer
+        :return: a dictionary where the keys are the layer numbers and the values are tuples. Each tuple
+        contains the size of the weight matrix and the size of the bias matrix for that layer:
+                `{1:(w1_size, b1_size), 
+                  2:(w2_size, b2_size),
+                  n:(wn_size, bn_size)}`.
         """
         nn_layout = dict()
         for layer in range(1, len(params)):
             nn_layout[layer] = ((params[layer-1], params[layer]), (1, params[layer]))
 
         return nn_layout
-    def act_func_map(self, act_map):
-        """
-        Converts provided map for activation functions in each layer to a dictionary 
-        with direct references to the functions and their derivatives for each layer.
+    def _act_func_map(self, act_map):
+        """ @public
+        The function converts a provided map of activation functions for each layer into a
+        dictionary with direct references to the functions and their derivatives for each layer.
+        
+        :param act_map: The `act_map` parameter is a dictionary that maps layer numbers to activation
+        function names. Each key-value pair in the dictionary represents a layer in the neural network,
+        where the key is the layer number (an integer) and the value is the name of the activation function
+        (a string)
+        :return: a new dictionary where each layer number is mapped to a tuple containing the activation
+        function and its derivative for that layer.
         """
         # validate the input
         assert len(act_map) == self._nn_depth, "Invalid activation map (length)"
@@ -103,14 +122,20 @@ class NN:
         # return a new dict with funcs and their derivatives mapped to each layer
         return {layer: (getattr(self, "_" + func_name), getattr(self, "_" + func_name + "_der")) for layer, func_name in act_map.items()}
 
+    # methods for printing to the console
     def __str__(self, with_full_report=False):
         """
-        Returns a string - the current state of the model
-        Can be modified by including the values of parameters for each neuron,
-        or by printing out an actual output of the model on all training samples.
+        The function returns a string representation of the current state of the model, including
+        the model name, cost, parameters, and performance on training samples.
+        
+        :param with_full_report: The (optional) `with_full_report` parameter is a boolean flag that determines whether
+        to include additional information in the string representation of the model's state. If
+        `with_full_report` is set to `True`, the string will include the values of parameters for each
+        neuron and the actual output of the model on all training samples. Defaults to `False`
+        :return: a string that represents the current state of the model.
         """
         state_str  = f"1) Model: {self._name}\n"
-        state_str += f"2) Cost: {self.cost()}\n"
+        state_str += f"2) Cost: {self._cost()}\n"
 
         if with_full_report:
             # prints out parameter matrixes (weights and biases)
@@ -135,14 +160,15 @@ class NN:
                 for inp_val in input:
                     state_str += f"{inp_val}, "
                 
-                output = self.forward(input)
+                output = self._forward(input)
                 state_str += f"{output})"
 
         return state_str
-
-    def cost(self):
+    def _cost(self):
         """
-        Computes the current cost value of the NN.
+        The function computes the current cost value of the neural network by calculating the mean
+        squared error (MSE) between the network's output and the expected output for each training data sample.
+        :return: the current cost value of the neural network.
         """
         result = 0
         # iterates through each entry of the training data
@@ -154,7 +180,7 @@ class NN:
 
             # feeds input subarray into the NN
             # collects the output data array
-            output = self.forward(input)
+            output = self._forward(input)
 
             # verifies that there is no mismatch between 
             # the sizes of the expected and actual output arrays
@@ -162,11 +188,7 @@ class NN:
             
             # iterates through both arrays and 
             # computes corresponding error values
-            
-            #------------------------------------------
             err_vals = (output - expected)[0] ** 2
-            # err_vals = np.abs((output - expected)[0])
-            #------------------------------------------
 
             # adds the accumulated error to the total cost
             result += np.sum(err_vals)
@@ -179,23 +201,35 @@ class NN:
     # methods for computing activations
     def _sigmoid(self, x):
         """
-        Helper function for computing sigmoid(x)
+        The function computes the sigmoid of a given input.
+        
+        :param x: The parameter `x` is the input value for which we want to compute the sigmoid function
+        :return: the value of sigmoid(x).
         """
         return 1 / (1 + np.exp(-x))
     def _relu(self, x):
         """
-        Helper function for computing ReLU(x)
+        The function computes the ReLU (Rectified Linear Unit) of a given input.
+        
+        :param x: The parameter `x` is a scalar or an array-like object representing the input to the ReLU
+        function
+        :return: the maximum value between 0 and the input value x.
         """
         return np.maximum(0, x)
     def _softmax(self, x):
         """
-        Helper function for a stable computation of softmax(x)
+        The function computes the softmax in a stable manner of a given input.
+        
+        :param x: The parameter `x` is a numpy array representing the input values for which we want to
+        compute the softmax function
+        :return: the softmax of the input array x.
         """
         norm_x = x - np.max(x)
         exp_z = np.exp(norm_x)
         result = exp_z / np.sum(exp_z)
 
         return result
+
     # methods for computing activation derivatives
     def _sigmoid_der(self, x):
         """
@@ -212,6 +246,7 @@ class NN:
         Computes the derivative values for f(x)=softmax([x]).
         """
         return self._sigmoid_der(x)
+
     # methods for computing loss derivatives
     def _abs_der(self, x):
         """
@@ -238,11 +273,15 @@ class NN:
         """
         return np.tanh(x)
 
-    #@profile
-    def forward(self, input_arr):
-        """
-        Forwards the <input_arr> through each layer of the NN.
-        Maps every layer with activation values of each neuron from this layer.
+    # core methods for the learning process
+    def _forward(self, input_arr):
+        """ @public
+        The function takes an input array and passes it through each layer of a neural network,
+        applying weights, biases, and activation functions to produce the final output.
+        
+        :param input_arr: The input_arr is a numpy array that represents the input to the neural network. It
+        is the input that will be forwarded through each layer of the network
+        :return: the activations of the last layer of the neural network.
         """
         # initializes input as the 0-th layer of activations
         a0 = input_arr
@@ -268,15 +307,24 @@ class NN:
             a0 = a1
         # returns activations of the last layer
         return a0
-    #@profile
-    def stochastic_descent(self, batch_ratio):
-        """
-        An implementation of a backpropagation algorithm via looping through each layer of the NN.
-        First, it pushes an input sample through NN and computes activations of each neuron.
-        Then it goes backwards through each layer and computes partial derivate values of each
-        weight and bias of the layer, and then adds them up to the gradient.
-        Only after iterating through all training samples, it applies the resulting gradient to parameter values, 
-        thus driving the cost function of the NN towards zero.
+    def _stochastic_descent(self, batch_ratio):
+        """ @public
+        The function implements the stochastic gradient descent algorithm for a neural
+        network, updating the parameters based on the computed gradients.
+        It does the following operations:
+            Keeps track of the total accumulated error value and the count of current samples.
+            Shuffles the training data randomly and iterates through each data sample.
+            For each sample, it 
+                1. splits the training data array into input and expected output subarrays;
+                2. computes activations for each layer, and saves the last layer activations (actual output);
+                3. sums up squares of error values of each activation in the last layer;
+                4. performs backpropagation and computes the gradient.
+            If the batch size is reached, it applies the accumulated gradient values to the parameters.
+            Finally, it updates the current cost of the model as an average error value per one sample.
+        
+        :param batch_ratio: The `batch_ratio` parameter is a float value that represents the ratio of the
+        total number of training samples that should be used in each batch. For example, if `batch_ratio` is
+        set to `0.5`, it means that each batch will contain `50%` of the total training samples.
         """
         # keeps the total accumulated error value
         total_err = 0
@@ -293,7 +341,7 @@ class NN:
 
             # computes activations for each layer
             # and saves the last layer activations
-            output = self.forward(input)
+            output = self._forward(input)
 
             # verifies that there is no mismatch between 
             # the sizes of the expected and actual output arrays
@@ -305,36 +353,32 @@ class NN:
 
             # sums up squares of error values 
             # of each activation in the last layer
-
-            #-------------------------------------
             total_err += np.sum(da_next ** 2)
-            # total_err += np.sum(np.abs(da_next))
-            #-------------------------------------
 
             # performs backpropagation and computes the gradient
-            self.backprop(da_next)
+            self._backprop(da_next)
 
             sample_counter += 1
             # checks if the batch size is reached
             if sample_counter / len(self._train) >= batch_ratio:
                 # applies accumulated gradient values to the parameters
-                self.apply_grad(sample_counter)
+                self._apply_grad(sample_counter)
                 sample_counter = 0
 
         # applies the gradient of the samples
         # that didn't reach the size of the batch
         if sample_counter > 0:
-            self.apply_grad(sample_counter)
+            self._apply_grad(sample_counter)
 
         # updates the current cost of the model 
         # as an average error value per 1 sample
         self._curr_cost = total_err / len(self._train)    
-    #@profile
-    def backprop(self, da_next):
-        """
-        Implementation of a backpropagation via looping through the layers in reverse order.
-        Updates <self._grad> for later application to the parameters of NN.
-        Input: <da_next> - an array of computed error values for the current output.
+    def _backprop(self, da_next):
+        """ @public
+        The function performs backpropagation to compute and accumulate the gradients of the weights and biases for later application to the parameters of a neural network.
+        
+        :param da_next: da_next is the derivative of the cost function with respect to the activations of
+        the next layer. It represents the backpropagated error from the next layer
         """
         # iterates through each layer backwards starting from the last one
         for layer in reversed(range(1, len(self._params)+1)):
@@ -342,14 +386,11 @@ class NN:
             # gets the weights for the current layer
             layer_wghts = self._params[layer][0]
             
-            #---------------------------------------------------------------------------
             # gets the derivative of activation func for the current layer
             der_func = self._layer_config[layer][1]
 
             # computes the derivative expression vectorized for all activations
-            # der_expr = self._half_sqr_der(da_next) * der_func(self._acts[layer][0])
             der_expr = self._lncosh_der(da_next) * der_func(self._acts[layer][0])
-            #---------------------------------------------------------------------------
 
             # computes bias derivatives for the entire layer
             db = der_expr
@@ -368,10 +409,14 @@ class NN:
 
             # computes activation derivatives for the previous layer
             da_next = der_expr @ layer_wghts.T
-
-    def apply_grad(self, num_samples):
-        """
-        Applies the stored gradient values to the parameters of NN.
+    def _apply_grad(self, num_samples):
+        """ @public
+        The function applies the stored gradient values to the parameters of a neural network.
+        
+        :param num_samples: The `num_samples` parameter represents the number of samples used to compute the
+        gradient. It is used to normalize the gradient update step by dividing it by the number of samples.
+        This helps to ensure that the gradient update is not too large or too small, regardless of the
+        number of samples used in the batch.
         """
         # iterates through parameters
         for layer, param_mxs in self._params.items():
@@ -383,10 +428,43 @@ class NN:
                 # resets the gradient to zero for next training cycle
                 grad_mx[:] = 0
 
-    def learn(self, num_epochs, algorithm=stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, stop=True, plot_static=False, plot_dynamic=False, upd_interval=20, with_full_report=False, return_cost = False):
+    # API method for setting up the learning parameters
+    def learn(self, num_epochs, algorithm=_stochastic_descent, rate=1, batch_ratio=1/10, threshold=0.02, stop=True, plot_static=False, plot_dynamic=False, upd_interval=20, with_full_report=False, return_cost = False):
         """
-        Trains the NN <n> times with the chosen algorithm, reports the state of the model
-        plots the graph of the cost function (opt. in real time) and computes the total run time.
+        The function trains a neural network for a specified number of epochs using a chosen
+        algorithm, reports the state of the model, plots the cost function, and computes the total run time.
+        
+        :param num_epochs: The number of epochs, which is the number of times the neural network will be
+        trained on the dataset
+        :param algorithm: Determines the learning algorithm to be used for training the neural network. 
+        The default value is `stochastic_descent`, but you can pass any other function that implements a 
+        different learning algorithm
+        :param rate: The learning rate of the neural network. It determines how quickly the parameters of the 
+        network are updated during training. A higher learning rate can result in faster convergence, but it 
+        may also cause the network to overshoot the optimal solution. Defaults to `1` (optional)
+        :param batch_ratio: Determines the ratio of the training data used in each iteration of the learning 
+        algorithm
+        :param threshold: Is used to determine when to stop the learning process. If the current cost of the 
+        model falls below the threshold value, the learning process will stop
+        :param stop: Determines whether the learning process should stop when the threshold cost is reached. 
+        If set to `True`, the learning process will stop when the cost falls below the specified threshold. 
+        Otherwise, the learning process will continue until all epochs are completed, regardless of the cost. 
+        Defaults to `True` (optional)
+        :param plot_static: Determines whether to plot the graph of the cost function after training the neural 
+        network. If set to `True`, the graph will be plotted using the `static_plot` method. Defaults to `False` 
+        (optional)
+        :param plot_dynamic: Determines whether or not to plot the cost function in real-time during the learning 
+        process. If set to `True`, a separate process will be created to handle the plotting. Defaults to `False` 
+        (optional)
+        :param upd_interval: Determines the number of epochs after which the dynamic cost plot is updated during 
+        the learning process. Defaults to `20` (optional)
+        :param with_full_report: Determines whether to include a full report of the neural network's state after 
+        training. If set to `True`, the full report will be printed to the console. Otherwise, only a summary 
+        of the neural network's state will be printed. Defaults to `False` (optional)
+        :param return_cost: Determines whether the function should return the list of cost values. If set to 
+        `True`, the function will return a list of cost values for each epoch. Defaults to `False` (optional)
+        :return: If the `return_cost` parameter is set to `True`, it returns a list of cost values. Otherwise it 
+        returns `None`
         """
         assert not (plot_dynamic and plot_static), "Incorrect plotting mode setup"
         # initializes threshold flag
@@ -409,7 +487,7 @@ class NN:
             # creates a queue for communication with the plotting process
             queue = Queue()
             # creates the plotting process
-            plotting_process = Process(target=self.dynamic_plot, args=(queue,))
+            plotting_process = Process(target=self._dynamic_plot, args=(queue,))
             plotting_process.start()
 
         # initializes the progress bar
@@ -475,25 +553,37 @@ class NN:
 
         if plot_static:
             # plots the cost
-            self.static_plot(x_vals, y_vals)
-
-        # gets the state of NN
-        nn_state = self.export_nn()
+            self._static_plot(x_vals, y_vals)
 
         if return_cost:
-            return nn_state, cost_vals
-        return nn_state
+            return cost_vals
 
-    def static_plot(self, x_vals, y_vals):
-        """
-        Plots the function of cost vs. number of training iterations
+    # methods for plotting the cost
+    def _static_plot(self, x_vals, y_vals):
+        """ @public
+        The function plots the cost of a model against the number of training iterations.
+        
+        :param x_vals: Is a list or array of values representing the number of learning iterations. 
+        These values will be plotted on the x-axis of the graph
+        :param y_vals: Represents the values of the cost function for each corresponding value 
+        in the `x_vals` parameter. These values are used to plot the cost vs. number of training 
+        iterations
         """
         plt.plot(x_vals, y_vals, color='red')
         plt.xlabel('Number of learning iterations')
         plt.ylabel('Cost of the model')
         plt.grid(True)
         plt.show()
-    def dynamic_plot(self, *args):
+    def _dynamic_plot(self, *args):
+        """ @public
+        The function plots the cost function over the number of learning iterations in real-time as the data comes in through 
+        a queue. It updates the plot with each new piece of data received through the queue, allowing for live visualization 
+        of the training process. The plot remains open and dynamically updates until a `None` value is received through the 
+        queue.
+
+        :param args: The first element of `args` is expected to be a queue that provides tuples of `(iteration, cost)`, where iteration 
+        is an integer representing the iteration number, and cost is a float representing the cost value at that iteration
+        """
         # gets the queue
         queue = args[0]
         # small constant for scaling of axes
@@ -545,24 +635,33 @@ class NN:
         
         plt.show()
 
-    def export_nn(self):
+    # methods for storing a NN object state in memory
+    def export_nn(self, data_path):
         """
-        Creates an object with current parameters of NN, that
-        can be saved and passed to the function <self.import_nn()> 
-        to restore the state of NN later.
-        Output: {layer:([w, b], 'act_func')}
+        The function creates a dictionary, that contains the current parameters and activation
+        functions of a neural network, and saves it to a file, which can be later used by the method 
+        `import_nn` to restore the state of the neural network.
+        
+        :param data_path: Is a string that represents the path where the neural network image will be saved
+        as a numpy file
         """
         nn_state = dict()
         for layer, params in self._params.items():
             act_func = self._act_funcs[layer]
             nn_state[layer] = (params, act_func)
 
-        return nn_state
-    def import_nn(self, new_state):
+        np.save(data_path, nn_state)
+        print("The image was successfully exported to " + data_path)
+    def import_nn(self, data_path):
         """
-        Imports new parameters of NN, and updates the corresponding class instance attributes.
-        Works together with the function <self.export_nn()> to facilitate the process of storing NNs.
+        The function imports new parameters for a neural network and updates the corresponding class instance 
+        attributes. It collaborates with the method `export_nn` to streamline the storage of neural networks.
+        
+        :param data_path: Is a string that represents the path to the file from which the new parameters for 
+        the neural network will be imported
         """
+        # read new parameters from the file
+        new_state = np.load(data_path, allow_pickle='TRUE').item()
         # creates temp dicts to store new configuration
         act_funcs = dict()
         new_params = dict()
@@ -580,19 +679,18 @@ class NN:
         self._params = copy.deepcopy(new_params)
         self._nn_depth = len(self._params)
         # maps layers to act funcs
-        self._layer_config = self.act_func_map(act_funcs)
+        self._layer_config = self._act_func_map(act_funcs)
+        print("The image was successfully imported from " + data_path)
 
     # LEGACY METHODS (can be used but are outperformed by the current algorithms)
-    def finite_diff(self, *_):
+    def _legacy_finite_diff(self, *_):
         """
-        Uses finite difference method for approximating the partial
-        derivatives of each parameter and constructing the gradient 
-        of the cost function.
-        Mutates each of the NN parameters by substracting their respective
-        derivative values.
+        The function uses the finite difference method to approximate the partial derivatives of each 
+        parameter and construct the gradient of the cost function, and then updates the parameter
+        values accordingly.
         """
         # computes the initial cost of the model
-        self._curr_cost = self.cost()
+        self._curr_cost = self._cost()
         # dictionary that will store 
         # updated parameter values
         upd_vals = dict()
@@ -611,7 +709,7 @@ class NN:
                         # tweaks the parameter by <_eps>
                         param_val[...] += self._eps
                         # computes the derivate of the cost function
-                        grad_val = (self.cost() - self._curr_cost) / self._eps
+                        grad_val = (self._cost() - self._curr_cost) / self._eps
                         # updates the parameter value (in the copy)
                         new_val[...] -= self._rate * grad_val
                         # restores the original value
@@ -622,14 +720,10 @@ class NN:
             upd_vals[layer] = mx_lst
         # the updated dictionary becomes the new parameter dictionary
         self._params = upd_vals
-    def old_descent(self, *_):
+    def _legacy_gradient_descent(self, *_):
         """
-        An implementation of a backpropagation algorithm via looping through each layer of the NN.
-        First, it pushes an input sample through NN and computes activations of each neuron.
-        Then it goes backwards through each layer and computes partial derivate values of each
-        weight and bias of the layer, and applies them to the parameters on the fly.
-        Each training sample iteration results in mutation of parameter values towards minimizing
-        the cost function of the NN.
+        The function implements a backpropagation algorithm for training a neural network by iterating 
+        through each layer and instantly updating the weights and biases based on the computed derivatives.
         """
         total_err = 0
         # iterates through each data sample
@@ -641,7 +735,7 @@ class NN:
 
             # computes activations for each layer
             # and saves the last layer activations
-            output = self.forward(input)
+            output = self._forward(input)
 
             # verifies that there is no mismatch between 
             # the sizes of the expected and actual output arrays
@@ -691,7 +785,7 @@ class NN:
                         da_act.append(da)
                     da_layer.append(da_act)
 
-                # APPLYING THE GRADIENT (LAYER)
+                # APPLYING THE GRADIENT
                 # substracts bias gradient
                 bs_grad = np.array(db_layer)
                 layer_bss -= self._rate * bs_grad
@@ -708,11 +802,14 @@ class NN:
         # updates the current cost of the model 
         # as an average error value per 1 sample
         self._curr_cost = total_err / len(self._train)
-    def old_backprop(self, da_next):
+    def _legacy_backprop(self, da_next):
         """
-        Implementation of a backpropagation via looping through the layers in reverse order.
-        Updates <self._grad> for later application to the parameters of NN.
-        Input: <da_next> - an array of computed error values for the current output.
+        The function implements backpropagation by iterating through the layers in reverse order, computing
+        the derivatives of the biases and weights, and updating the gradient for later use in updating the
+        parameters of the neural network. On average, this backpropagation algorithm reaches 1% of cost 30 
+        times faster than the '_legacy_finite_diff' method.
+        
+        :param da_next: An array of computed error values for the current output
         """
         # iterates through each layer backwards starting from the last one
         for layer in reversed(range(1, len(self._params)+1)):
@@ -757,8 +854,12 @@ class NN:
             da_next = np.sum(da_next, axis=0)
 
 def adder_truth_table(num_bits):
-    """
-    Generates a truth table for a <num_bits> adder.
+    """ @private
+    The function generates a truth table for a given number of bits for a binary adder.
+    
+    :param num_bits: Represents the number of bits in the adder. It determines the size of the truth 
+    table that will be generated
+    :return: a numpy array that represents the truth table for a `num_bits` adder.
     """
     truth_table = []
     decimal_range = range(2 ** num_bits)
@@ -775,15 +876,26 @@ def adder_truth_table(num_bits):
 
     return np.array(truth_table)
 
-
 def main():
-
-    # on average, the backpropagation algorithm reaches 1% of cost 
-    # 30 times faster than the finite difference computation
+    """
+    The main function is used to test the neural network implementation.
+    """
     multiprocessing.freeze_support()
     np.set_printoptions(precision=0, suppress=True)
     rand_range = (-1, 1)
 
+    n_bit = 4
+    adder_train = adder_truth_table(n_bit)
+    act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
+    adder_layout = ((2*n_bit, 3*n_bit, 2*n_bit, n_bit + 1), act_funcs)
+
+    adder_nn = NN(adder_layout, rand_range, adder_train, f"{n_bit}-bit Adder")
+    adder_nn.learn(1000, batch_ratio=1/len(adder_train), rate=1/4, stop=True, plot_dynamic=True)
+
+def legacy_main():
+    """ @private
+    """
+    rand_range = (-1, 1)
     # <<< OR, AND, NAND and XOR >>>
     or_train = ((0, 0, 0),
                 (1, 0, 1),
@@ -847,15 +959,6 @@ def main():
 
     half_add_nn = NN(half_add_layout, rand_range, np.array(half_add_train), "Half-adder")
     full_add_nn = NN(full_add_layout, rand_range, np.array(full_add_train), "Full-adder")
-
-    n_bit = 5
-    adder_train = adder_truth_table(n_bit)
-    act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
-    adder_layout = ((2*n_bit, 3*n_bit, 2*n_bit, n_bit + 1), act_funcs)
-
-    adder_nn = NN(adder_layout, rand_range, adder_train, f"{n_bit}-bit Adder")
-    adder_nn.learn(500, batch_ratio=1/len(adder_train), rate=1/4, stop=True, plot_static=True)
-
 
 if __name__ == "__main__":
     main()
