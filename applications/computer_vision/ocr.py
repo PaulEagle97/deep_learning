@@ -2,7 +2,7 @@
 This script features simple Optical Character Recognition application, based on the MNIST set
 of handwritten digits.
 """
-from nn_fwk import NN
+from nn_fwk import MLP
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -55,10 +55,10 @@ def main():
 
     # act_funcs = {1:"softmax"}
     # ocr_layout = ((784, 10), act_funcs)
-    ocr_nn = NN(ocr_layout, rand_range, train_data, "Basic OCR")
+    ocr_nn = MLP(ocr_layout, rand_range, train_data, "Basic OCR")
 
     # LOAD THE IMAGE FROM FILE
-    ocr_nn.import_nn(data_path)
+    ocr_nn.import_mlp(data_path)
 
     # LEARN & PLOT
     # plot_vals = np.array([[], []])

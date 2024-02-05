@@ -1,9 +1,9 @@
 import inspect
-from nn_fwk import NN
+from nn_fwk import MLP
 
 def main():
     # Get the docstring for each method in the class and print it
-    for name, func in inspect.getmembers(NN, inspect.isfunction):
+    for name, func in inspect.getmembers(MLP, inspect.isfunction):
         print(f"Function '{name}': {inspect.getdoc(func)}\n")
 
 main()

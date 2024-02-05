@@ -7,7 +7,7 @@ This script permits to process one of 28x28 greyscale images from MNIST dataset 
 5. Import a previously trained NN from a file
 6. Upscale the image "saved" in NN to any resolution and display the result.
 """
-from nn_fwk import NN
+from nn_fwk import MLP
 import gzip
 import os
 import numpy as np
@@ -126,12 +126,12 @@ def main():
     rand_range = (-1, 1)
     act_funcs = {1:"sigmoid", 2:"sigmoid", 3:"sigmoid"}
     nn_layout = ((2, 7, 4, 1), act_funcs)
-    img_nn = NN(nn_layout, rand_range, img_mx, "Image Upscaler")
+    img_nn = MLP(nn_layout, rand_range, img_mx, "Image Upscaler")
 
     # LOAD NN PARAMS (OPTIONAL)
     file_name = 'UPSC_3.npy'
     data_path = os.path.join (curr_dir, "saved_NNs", file_name)
-    img_nn.import_nn(data_path)
+    img_nn.import_mlp(data_path)
 
     # LEARN & PLOT & SAVE (OPTIONAL)
     # plot_vals = np.array([[], []])
